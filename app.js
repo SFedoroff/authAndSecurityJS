@@ -1,11 +1,12 @@
 //jshint esversion:6
 
 require('dotenv').config(); //подключение dotenv для хранения ключей
+const md5 = require('md5'); //подключение md5 hashing function
 const express = require("express");
 const ijs = require("ejs");
 const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
-const encrypt = require("mongoose-encryption");
+//const encrypt = require("mongoose-encryption"); отключаем mongoose-encryption для md5 
 
 const app = express();
 
@@ -24,7 +25,7 @@ const userSchema = new mongoose.Schema({
 
 //const secret = "Thisisourlittlesecret"; //секретная строка вместо двух ключей для mongoose-encryption, перенесли в .env
 const secret = process.env.SECRET;
-userSchema.plugin(encrypt, { secret: secret, encryptedFields: ["password"] }); //password из schema кодируем
+//userSchema.plugin(encrypt, { secret: secret, encryptedFields: ["password"] }); //password из schema кодируем // отключаем mongoose-encryption для md5 
 
 const User = new mongoose.model("User", userSchema);
 
@@ -45,7 +46,7 @@ app.get("/login", function(req,res){
 app.post("/register", function(req, res){
     const newUser = new User({
         email: req.body.username,
-        password: req.body.password
+        password: md5(req.body.password) // хэшируем пароль, который вводит пользователь
     });
 
     newUser.save(function(err){

@@ -3,10 +3,12 @@
 require('dotenv').config(); //подключение dotenv для хранения ключей
 const md5 = require('md5'); //подключение md5 hashing function
 const express = require("express");
-const ijs = require("ejs");
+const ejs = require("ejs");
 const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
 //const encrypt = require("mongoose-encryption"); отключаем mongoose-encryption для md5 
+const bcrypt = require("bcrypt"); //подключаем bcrypt
+const saltRounds = 10; //количество итераций соли
 
 const app = express();
 
@@ -44,23 +46,27 @@ app.get("/login", function(req,res){
 
 //POST
 app.post("/register", function(req, res){
-    const newUser = new User({
-        email: req.body.username,
-        password: md5(req.body.password) // хэшируем пароль, который вводит пользователь
-    });
 
-    newUser.save(function(err){
-        if (err){
-            console.log(err);
-        } else {
-            res.render("secrets");
-        }
+    bcrypt.hash(req.body.password, saltRounds, function(err, hash) { //добавление соли и хеширование
+        const newUser = new User({
+            email: req.body.username,
+            password: hash //полученный хэш с солью
+        });
+    
+        newUser.save(function(err){
+            if (err){
+                console.log(err);
+            } else {
+                res.render("secrets");
+            }
+        });
     });
+    
 });
 
 app.post("/login", function(req, res){
     const username = req.body.username;
-    const paswword = req.body.password;
+    const password = req.body.password;
 
     User.findOne({email: req.body.username},
         function(err, findUser){
@@ -69,9 +75,12 @@ app.post("/login", function(req, res){
                 ;
             } else {
                 if (findUser){
-                    if (findUser.password === paswword){
+                    // Load hash from your password DB.
+                    bcrypt.compare(password, findUser.password, function(err, result) {
+                    if (result === true) {
                         res.render("secrets");
                     }
+                    });
                 }
             }
         });

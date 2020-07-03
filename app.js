@@ -1,14 +1,13 @@
 //jshint esversion:6
 
 require('dotenv').config(); //подключение dotenv для хранения ключей
-const md5 = require('md5'); //подключение md5 hashing function
 const express = require("express");
 const ejs = require("ejs");
 const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
-//const encrypt = require("mongoose-encryption"); отключаем mongoose-encryption для md5 
-const bcrypt = require("bcrypt"); //подключаем bcrypt
-const saltRounds = 10; //количество итераций соли
+const session = require("express-session");
+const passport = require("passport");
+const passportLocalMongoose = require("passport-local-mongoose");
 
 const app = express();
 
@@ -17,19 +16,34 @@ app.set("view engine", "ejs");
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static("public"));
 
+app.use(session({
+    secret: "Our little secret.",
+    resave: false,
+    saveUninitialized: true
+   // cookie: { secure: true }
+  }));
+
+app.use(passport.initialize()); //start using authentication
+
+app.use(passport.session());
 // MongoDB setup
 mongoose.connect('mongodb://localhost:27017/userDB', {useNewUrlParser: true, useUnifiedTopology: true});
+mongoose.set("useCreateIndex", true);
 
 const userSchema = new mongoose.Schema({
     email: String,
     password: String
 });
 
-//const secret = "Thisisourlittlesecret"; //секретная строка вместо двух ключей для mongoose-encryption, перенесли в .env
-const secret = process.env.SECRET;
-//userSchema.plugin(encrypt, { secret: secret, encryptedFields: ["password"] }); //password из schema кодируем // отключаем mongoose-encryption для md5 
+userSchema.plugin(passportLocalMongoose);
 
 const User = new mongoose.model("User", userSchema);
+
+// CHANGE: USE "createStrategy" INSTEAD OF "authenticate"
+passport.use(User.createStrategy());
+ 
+passport.serializeUser(User.serializeUser());
+passport.deserializeUser(User.deserializeUser());
 
 //GET
 app.get("/", function(req, res){
@@ -44,46 +58,51 @@ app.get("/login", function(req,res){
     res.render("login");
 });
 
+app.get("/secrets", function(req, res){
+if (req.isAuthenticated()){
+    res.render("secrets");
+}else {
+    res.redirect("/login");
+}
+});
+
+app.get("/logout", function(req, res){
+    req.logout(); //passport logout()
+    res.render("/");
+});
+
 //POST
 app.post("/register", function(req, res){
 
-    bcrypt.hash(req.body.password, saltRounds, function(err, hash) { //добавление соли и хеширование
-        const newUser = new User({
-            email: req.body.username,
-            password: hash //полученный хэш с солью
-        });
-    
-        newUser.save(function(err){
-            if (err){
-                console.log(err);
-            } else {
-                res.render("secrets");
-            }
-        });
+    User.register({username: req.body.username}, req.body.password, function(err, user){
+        if (err) {
+            console.log(err);
+            res.redirect("/register");
+        }else {
+            passport.authenticate("local")(req, res, function(){
+                res.redirect("/secrets");
+            });
+        }
     });
-    
 });
 
 app.post("/login", function(req, res){
-    const username = req.body.username;
-    const password = req.body.password;
 
-    User.findOne({email: req.body.username},
-        function(err, findUser){
-            if (err){
-                console.log(err);
-                ;
-            } else {
-                if (findUser){
-                    // Load hash from your password DB.
-                    bcrypt.compare(password, findUser.password, function(err, result) {
-                    if (result === true) {
-                        res.render("secrets");
-                    }
-                    });
-                }
-            }
-        });
+    const user = new User({
+        username: req.body.username,
+        password: req.body.password
+    });
+
+    req.login(user, function(err){
+        if (err){
+            console.log(err);
+        } else {
+            passport.authenticate("local")(req, res, function(){
+            res.redirect("/secrets");
+            });
+        }
+    });
+   
 });
 
 
